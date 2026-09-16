@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SGP.32 TLV Parser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --ink:#1c2330; --ink-2:#5b6676; --ink-3:#8d97a5;
+  --line:#dde2ea; --tag:#1f5fa6; --len:#6b7a8f; --val:#3a4657; --name:#1c2330;
+  --hl:#e3ecf8; --err:#b3261e; --err-bg:#fbe9e7; --warn:#8a5a00; --warn-bg:#fff5db;
+  --accent:#1f5fa6; --accent-ink:#ffffff; --focus:#7aa7e0;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141821; --panel:#1b2130; --ink:#e6e9ef; --ink-2:#a6afbe; --ink-3:#6f7a8b;
+    --line:#2b3446; --tag:#7fb3f0; --len:#8a97ab; --val:#c5cdd9; --name:#e6e9ef;
+    --hl:#26324a; --err:#ff8a80; --err-bg:#3a1f1e; --warn:#ffcf6e; --warn-bg:#3a2f14;
+    --accent:#7fb3f0; --accent-ink:#0f1522; --focus:#7fb3f0;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141821; --panel:#1b2130; --ink:#e6e9ef; --ink-2:#a6afbe; --ink-3:#6f7a8b;
+  --line:#2b3446; --tag:#7fb3f0; --len:#8a97ab; --val:#c5cdd9; --name:#e6e9ef;
+  --hl:#26324a; --err:#ff8a80; --err-bg:#3a1f1e; --warn:#ffcf6e; --warn-bg:#3a2f14;
+  --accent:#7fb3f0; --accent-ink:#0f1522; --focus:#7fb3f0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:28px 20px 60px}
+.wrap{max-width:1180px;margin:0 auto}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{font:600 22px/1.2 "IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;letter-spacing:-.01em}
+h1 small{font-weight:400;color:var(--ink-2);font-size:14px;margin-left:10px;font-family:"IBM Plex Sans",system-ui,sans-serif}
+.spec{color:var(--ink-2);font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.input{padding:14px}
+textarea{width:100%;min-height:120px;resize:vertical;border:1px solid var(--line);border-radius:4px;padding:10px 12px;
+  background:var(--bg);color:var(--ink);font:13px/1.55 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+label.ctl{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:13px}
+select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:4px;padding:6px 8px;font:13px "IBM Plex Sans",system-ui,sans-serif;max-width:320px}
+button{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:4px;padding:7px 14px;font:500 14px "IBM Plex Sans",system-ui,sans-serif;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+button:hover{filter:brightness(1.05)}
+.spacer{flex:1}
+.samples{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.samples button{padding:3px 9px;font-size:12px}
+.out{margin-top:16px;overflow:hidden}
+.outhead{padding:12px 14px 10px;border-bottom:1px solid var(--line)}
+.outhead .headline{font:600 17px/1.35 "IBM Plex Sans",system-ui,sans-serif;color:var(--ink)}
+.outhead .ctx{font:12.5px/1.5 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink-2);margin-top:3px;word-break:break-all}
+.outhead .meta{margin-top:2px}
+.outhead .meta{color:var(--ink-2);font-size:13px}
+
+.ops{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.opcol{border:1px solid var(--line);border-radius:5px;padding:10px 12px;opacity:.55}
+.opcol.active{opacity:1;border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.opcol h3{margin:0 0 6px;font:600 13px/1.4 "IBM Plex Sans",system-ui,sans-serif;display:flex;justify-content:space-between;gap:8px}
+.opcol h3 span{font-weight:400;color:var(--ink-2)}
+.opcol ul{list-style:none;margin:0;padding:0;font:12.5px/1.7 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink-2)}
+.opcol li{display:flex;justify-content:space-between;gap:8px;padding:0 6px;margin:0 -6px;border-radius:3px}
+.opcol li b{font-weight:400;color:var(--ink-3)}
+.opcol li.hit{background:var(--hl);color:var(--ink);font-weight:600}
+.opcol li.hit b{color:var(--tag);font-weight:600}
+@media (max-width:640px){.ops{grid-template-columns:1fr}}
+.msgs{padding:8px 14px 0}
+.msg{padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:6px}
+.msg.err{background:var(--err-bg);color:var(--err)}
+.msg.warn{background:var(--warn-bg);color:var(--warn)}
+pre{margin:0;padding:12px 14px 14px;overflow-x:auto;font:13px/1.65 "IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--val)}
+.ln{display:block;white-space:pre;border-radius:3px;padding:0 4px;margin:0 -4px;cursor:default}
+.ln:hover,.ln.on{background:var(--hl)}
+.t{color:var(--tag);font-weight:600}
+.l{color:var(--len)}
+.v{color:var(--val)}
+.n{color:var(--name);font-weight:500}
+.d{color:var(--ink-2)}
+.u{color:var(--err)}
+.x{color:var(--err)}
+.raw{border-top:1px solid var(--line);padding:10px 14px 12px;font:12px/1.8 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink-3);word-break:break-all}
+.raw b{font-weight:400;color:var(--ink-3)}
+.raw b.hi{background:var(--hl);color:var(--ink)}
+.raw b.hit{color:var(--tag);font-weight:600}
+.empty{padding:28px 14px;color:var(--ink-2)}
+footer{margin-top:14px;color:var(--ink-3);font-size:12px}
+@media (max-width:640px){body{padding:16px 12px 40px} h1{font-size:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>SGP.32 TLV parser<small>BER/DER decoder for eSIM IoT (ESipa, ES10b, eUICC Package) messages</small></h1>
+  <div class="spec">Schema: SGP32Definitions, GSMA SGP.32 v1.2</div>
+</header>
+
+<div class="panel input">
+  <textarea id="hex" spellcheck="false" placeholder="Paste a hex TLV here, e.g. BF4F8199BF5181953050801165696D2D6465762E776F726B7A2E636F6D5A10…  Spaces, newlines and 0x prefixes are ignored."></textarea>
+  <div class="controls">
+    <label class="ctl">Message type
+      <select id="root"><option value="auto">Auto-detect</option></select>
+    </label>
+    <label class="ctl"><input type="checkbox" id="indent" checked> Indent nested elements</label>
+    <label class="ctl"><input type="checkbox" id="showhex" checked> Show value bytes</label>
+    <span class="spacer"></span>
+    <button class="ghost" id="copy">Copy output</button>
+    <button id="go">Parse</button>
+  </div>
+  <div class="samples" id="samples"></div>
+</div>
+
+<div class="panel out" id="out">
+  <div class="empty">Paste a hex string and press Parse (or Ctrl/⌘+Enter).</div>
+</div>
+<footer>Tag names come from the ASN.1 module in SGP.32 v1.2 (with imported SGP.22 types). Structures from X.509 certificates and unknown vendor data are shown as generic BER.</footer>
+</div>
+
+<script>
+/* ============================================================
+   Schema DSL
+   kind: SEQ | SEQOF | CHOICE | INT | UTF8 | OCTETS | NULL | BOOL | OID | BITS | ICCID | EID | ANY | CERT
+   tag : explicit outer tag for the type (hex string) or undefined
+   Field: {n:name, t:tagHex|null, ty:TypeName|typeObj, opt:bool}
+   Alt  : {n:name, t:tagHex|null, ty:TypeName|typeObj}
+   Automatic tags have already been applied by hand (module is AUTOMATIC TAGS).
+   ============================================================ */
+const SEQ=(fields,tag)=>({kind:'SEQ',fields,tag});
+const SEQOF=(of,tag)=>({kind:'SEQOF',of,tag});
+const CHOICE=(alts,tag)=>({kind:'CHOICE',alts,tag});
+const INT=(names,tag)=>({kind:'INT',names,tag});
+const UTF8=(tag)=>({kind:'UTF8',tag});
+const OCTETS=(tag,label)=>({kind:'OCTETS',tag,label});
+const NULLT=(tag)=>({kind:'NULL',tag});
+const BOOL=(tag)=>({kind:'BOOL',tag});
+const OID=(tag)=>({kind:'OID',tag});
+const BITS=(names,tag)=>({kind:'BITS',names,tag});
+const F=(n,t,ty,opt)=>({n,t,ty,opt:!!opt});
+const A=(n,t,ty)=>({n,t,ty});
+
+const TY={};
+/* ---------- Imported from SGP.22 ---------- */
+TY.Iccid={kind:'ICCID',tag:'5A'};
+TY.Octet16={kind:'EID'};                 // used for EID and challenges
+TY.TransactionId=OCTETS();
+TY.VersionType={kind:'VERSION'};
+TY.SubjectKeyIdentifier=OCTETS();
+TY.Certificate={kind:'CERT',tag:'30'};
+TY.SubjectPublicKeyInfo={kind:'ANY',tag:'30',label:'SubjectPublicKeyInfo'};
+TY.ProfileState=INT({0:'disabled',1:'enabled'});
+TY.ProfileClass=INT({0:'test',1:'provisioning',2:'operational'});
+TY.IconType=INT({0:'jpg',1:'png'});
+TY.PprIds=BITS(['pprUpdateControl','ppr1','ppr2']);
+TY.NotificationEvent=BITS(['notificationInstall','notificationEnable','notificationDisable','notificationDelete','loadRpmPackageResult']);
+TY.RspCapability=BITS(['additionalProfile','crlSupport','rpmSupport','testProfileSupport','deviceInfoExtensibilitySupport','serviceSpecificDataSupport']);
+TY.UICCCapability=BITS(['contactlessSupport','usimSupport','isimSupport','csimSupport','akaMilenage','akaCave','akaTuak128','akaTuak256','rfu1','rfu2','gbaAuthenUsim','gbaAuthenISim','mbmsAuthenUsim','eapClient','javacard','multos','multipleUsimSupport','multipleIsimSupport','multipleCsimSupport','berTlvFileSupport','dfLinkSupport','catTp','getIdentity','profile-a-x25519','profile-b-p256','suciCalculatorApi','dns-resolution','scp11ac','scp11c-authorization-mechanism','s16mode','eaka']);
+TY.OperatorId=SEQ([F('mccMnc','80',OCTETS()),F('gid1','81',OCTETS(),1),F('gid2','82',OCTETS(),1)]);
+TY.NotificationConfigurationInformation=SEQ([F('profileManagementOperation','80','NotificationEvent'),F('notificationAddress','81',UTF8())]);
+TY.DpProprietaryData=SEQ([F('dpOid','80',OID())]);
+TY.VendorSpecificExtension=SEQOF(SEQ([F('vendorOid','80',OID()),F('vendorSpecificData',null,{kind:'ANY'})]));
+TY.CertificationDataObject=SEQ([F('platformLabel','80',UTF8()),F('discoveryBaseURL','81',UTF8())]);
+TY.DeviceCapabilities=SEQ([
+  F('gsmSupportedRelease','80','VersionType',1),F('utranSupportedRelease','81','VersionType',1),
+  F('cdma2000onexSupportedRelease','82','VersionType',1),F('cdma2000hrpdSupportedRelease','83','VersionType',1),
+  F('cdma2000ehrpdSupportedRelease','84','VersionType',1),F('eutranEpcSupportedRelease','85','VersionType',1),
+  F('contactlessSupportedRelease','86','VersionType',1),F('rspCrlSupportedVersion','87','VersionType',1),
+  F('nrEpcSupportedRelease','88','VersionType',1),F('nr5gcSupportedRelease','89','VersionType',1),
+  F('eutran5gcSupportedRelease','8A','VersionType',1),F('lpaSvn','8B','VersionType',1),
+  F('catSupportedClasses','8C',BITS([]),1),F('euiccFormFactorType','8D',INT({0:'removableEuicc',1:'nonRemovableEuicc'}),1),
+  F('deviceAdditionalFeatureSupport','AE',{kind:'ANY'},1)]);
+TY.DeviceInfo=SEQ([F('tac','80',OCTETS()),F('deviceCapabilities','A1','DeviceCapabilities'),F('imei','82',OCTETS(),1)]);
+TY.CtxParams1=CHOICE([A('ctxParamsForCommonAuthentication','A0',SEQ([F('matchingId','80',UTF8(),1),F('deviceInfo','A1','DeviceInfo')]))]);
+TY.ServerSigned1=SEQ([F('transactionId','80','TransactionId'),F('euiccChallenge','81','Octet16'),F('serverAddress','83',UTF8()),F('serverChallenge','84','Octet16')]);
+TY.SmdpSigned2=SEQ([F('transactionId','80','TransactionId'),F('ccRequiredFlag','01',BOOL()),F('bppEuiccOtpk','5F49',OCTETS(),1)]);
+TY.EuiccSigned2=SEQ([F('transactionId','80','TransactionId'),F('euiccOtpk','5F49',OCTETS()),F('hashCc','04',OCTETS(),1)]);
+TY.PrepareDownloadResponseOk=SEQ([F('euiccSigned2','30','EuiccSigned2'),F('euiccSignature2','5F37',OCTETS())]);
+TY.DownloadErrorCode=INT({1:'invalidDpAddress',2:'euiccVersionNotSupportedByDp',3:'ciPKIdNotSupported',127:'undefinedError'});
+TY.PrepareDownloadResponseError=SEQ([F('transactionId','80','TransactionId'),F('downloadErrorCode','02','DownloadErrorCode')]);
+TY.AuthenticateErrorCode=INT({1:'invalidCertificate',2:'invalidSignature',3:'unsupportedCurve',4:'noSessionContext',5:'invalidOid',6:'euiccChallengeMismatch',7:'ciPKUnknown',127:'undefinedError'});
+TY.AuthenticateResponseError=SEQ([F('transactionId','80','TransactionId'),F('authenticateErrorCode','02','AuthenticateErrorCode')]);
+TY.CancelSessionReason=INT({0:'endUserRejection',1:'postponed',2:'timeout',3:'pprNotAllowed',4:'metadataMismatch',5:'loadBppExecutionError',127:'undefinedReason'});
+TY.EuiccCancelSessionSigned=SEQ([F('transactionId','80','TransactionId'),F('smdpOid','06',OID()),F('reason','02','CancelSessionReason')]);
+TY.CancelSessionResponseOk=SEQ([F('euiccCancelSessionSigned','30','EuiccCancelSessionSigned'),F('euiccCancelSessionSignature','5F37',OCTETS())]);
+TY.BppCommandId=INT({0:'initialiseSecureChannel',1:'configureISDP',2:'storeMetadata',3:'storeMetadata2',4:'replaceSessionKeys',5:'loadProfileElements'});
+TY.ErrorReason=INT({1:'incorrectInputValues',2:'invalidSignature',3:'invalidTransactionId',4:'unsupportedCrtValues',5:'unsupportedRemoteOperationType',6:'unsupportedProfileClass',7:'scp03tStructureError',8:'scp03tSecurityError',9:'installFailedDueToIccidAlreadyExistsOnEuicc',10:'installFailedDueToInsufficientMemoryForProfile',11:'installFailedDueToInterruption',12:'installFailedDueToPEProcessingError',13:'installFailedDueToDataMismatch',14:'testProfileInstallFailedDueToInvalidNaaKey',15:'pprNotAllowed',127:'installFailedDueToUnknownError'});
+TY.SuccessResult=SEQ([F('aid','4F',OCTETS()),F('simaResponse','04',OCTETS())]);
+TY.ErrorResult=SEQ([F('bppCommandId','80','BppCommandId'),F('errorReason','81','ErrorReason'),F('simaResponse','82',OCTETS(),1)]);
+TY.NotificationMetadata=SEQ([F('seqNumber','80',INT()),F('profileManagementOperation','81','NotificationEvent'),F('notificationAddress','0C',UTF8()),F('iccid','5A','Iccid',1)],'BF2F');
+TY.ProfileInstallationResultData=SEQ([F('transactionId','80','TransactionId'),F('notificationMetadata','BF2F','NotificationMetadata'),F('smdpOid','06',OID()),
+  F('finalResult','A2',CHOICE([A('successResult','A0','SuccessResult'),A('errorResult','A1','ErrorResult')]))],'BF27');
+TY.EuiccSignPIR=OCTETS('5F37');
+TY.OtherSignedNotification=SEQ([F('tbsOtherNotification','BF2F','NotificationMetadata'),F('euiccNotificationSignature','5F37',OCTETS()),F('euiccCertificate','30','Certificate'),F('eumCertificate','30','Certificate')]);
+TY.ProfileInfoListRequest=SEQ([F('searchCriteria',null,CHOICE([A('isdpAid','4F',OCTETS()),A('iccid','5A','Iccid'),A('profileClass','95','ProfileClass')]),1),F('tagList','5C',OCTETS(),1)],'BF2D');
+TY.ProfilePolicyAuthorisationRule=SEQ([F('pprIds','80','PprIds'),F('allowedOperators','A1',SEQOF('OperatorId')),F('pprFlags','82',BITS(['consentRequired']))]);
+TY.RulesAuthorisationTable=SEQOF('ProfilePolicyAuthorisationRule');
+TY.EUICCInfo1=SEQ([F('svn','82','VersionType'),F('euiccCiPKIdListForVerification','A9',SEQOF('SubjectKeyIdentifier')),F('euiccCiPKIdListForSigning','AA',SEQOF('SubjectKeyIdentifier'))],'BF20');
+TY.BoundProfilePackage=SEQ([F('initialiseSecureChannelRequest','BF23',{kind:'ANY',label:'InitialiseSecureChannelRequest'}),F('firstSequenceOf87','A0',{kind:'ANY'}),F('sequenceOf88','A1',{kind:'ANY'}),F('secondSequenceOf87','A2',{kind:'ANY'},1),F('sequenceOf86','A3',{kind:'ANY'})],'BF36');
+
+/* ---------- SGP.32: 2.11.1 eIM → eUICC ---------- */
+TY.EimIdType=INT({1:'eimIdTypeOid',2:'eimIdTypeFqdn',3:'eimIdTypeProprietary'});
+TY.EimSupportedProtocol=BITS(['eimRetrieveHttps','eimRetrieveCoaps','eimInjectHttps','eimInjectCoaps','eimProprietary']);
+TY.EimConfigurationData=SEQ([
+  F('eimId','80',UTF8()),F('eimFqdn','81',UTF8(),1),F('eimIdType','82','EimIdType',1),F('counterValue','83',INT(),1),F('associationToken','84',INT(),1),
+  F('eimPublicKeyData','A5',CHOICE([A('eimPublicKey','A0','SubjectPublicKeyInfo'),A('eimCertificate','A1','Certificate')]),1),
+  F('trustedPublicKeyDataTls','A6',CHOICE([A('trustedEimPkTls','A0','SubjectPublicKeyInfo'),A('trustedCertificateTls','A1','Certificate')]),1),
+  F('eimSupportedProtocol','87','EimSupportedProtocol',1),F('euiccCiPKId','88','SubjectKeyIdentifier',1),F('indirectProfileDownload','89',NULLT(),1)]);
+TY.SetDefaultDpAddressRequest=SEQ([F('defaultDpAddress','0C',UTF8())],'BF65');
+TY.Psmo=CHOICE([
+  A('enable','A3',SEQ([F('iccid','5A','Iccid'),F('rollbackFlag','05',NULLT(),1)])),
+  A('disable','A4',SEQ([F('iccid','5A','Iccid')])),
+  A('delete','A5',SEQ([F('iccid','5A','Iccid')])),
+  A('listProfileInfo','BF2D','ProfileInfoListRequest'),
+  A('getRAT','A6',SEQ([])),
+  A('configureImmediateEnable','A7',SEQ([F('immediateEnableFlag','80',NULLT(),1),F('defaultSmdpOid','81',OID(),1),F('defaultSmdpAddress','82',UTF8(),1)])),
+  A('setFallbackAttribute','A8',SEQ([F('iccid','5A','Iccid')])),
+  A('unsetFallbackAttribute','A9',SEQ([])),
+  A('setDefaultDpAddress','BF65','SetDefaultDpAddressRequest')]);
+TY.Eco=CHOICE([
+  A('addEim','A8','EimConfigurationData'),
+  A('deleteEim','A9',SEQ([F('eimId','80',UTF8())])),
+  A('updateEim','AA','EimConfigurationData'),
+  A('listEim','AB',SEQ([]))]);
+TY.EuiccPackage=CHOICE([A('psmoList','A0',SEQOF('Psmo')),A('ecoList','A1',SEQOF('Eco'))]);
+TY.EuiccPackageSigned=SEQ([F('eimId','80',UTF8()),F('eidValue','5A','Octet16'),F('counterValue','81',INT()),F('eimTransactionId','82','TransactionId',1),F('euiccPackage',null,'EuiccPackage')]);
+TY.EuiccPackageRequest=SEQ([F('euiccPackageSigned','30','EuiccPackageSigned'),F('eimSignature','5F37',OCTETS())],'BF51');
+TY.IpaEuiccDataRequest=SEQ([
+  F('tagList','5C',OCTETS()),F('euiccCiPKIdentifierToBeUsed','04',OCTETS(),1),
+  F('searchCriteriaNotification','A1',CHOICE([A('seqNumber','80',INT()),A('profileManagementOperation','81','NotificationEvent')]),1),
+  F('searchCriteriaEuiccPackageResult','A2',CHOICE([A('seqNumber','80',INT())]),1),
+  F('eimTransactionId','83','TransactionId',1)],'BF52');
+TY.ProfileDownloadData=CHOICE([A('activationCode','80',UTF8()),A('contactDefaultSmdp','81',NULLT()),A('contactSmds','A2',SEQ([F('smdsAddress','0C',UTF8(),1)]))]);
+TY.ProfileDownloadTriggerRequest=SEQ([F('profileDownloadData','A0','ProfileDownloadData',1),F('eimTransactionId','82','TransactionId',1)],'BF54');
+TY.SequenceNumber=INT(undefined,'80');
+TY.EimAcknowledgements=SEQOF('SequenceNumber','BF53');
+
+/* ---------- 2.11.2 eUICC → eIM ---------- */
+TY.EnableProfileResult=INT({0:'ok',1:'iccidOrAidNotFound',2:'profileNotInDisabledState',3:'disallowedByPolicy',5:'catBusy',20:'rollbackNotAvailable',127:'undefinedError'});
+TY.DisableProfileResult=INT({0:'ok',1:'iccidOrAidNotFound',2:'profileNotInEnabledState',3:'disallowedByPolicy',5:'catBusy',127:'undefinedError'});
+TY.DeleteProfileResult=INT({0:'ok',1:'iccidOrAidNotFound',2:'profileNotInDisabledState',3:'disallowedByPolicy',20:'rollbackNotAvailable',21:'returnFallbackProfile',127:'undefinedError'});
+TY.ConfigureImmediateEnableResult=INT({0:'ok',1:'insufficientMemory',7:'commandError',127:'undefinedError'});
+TY.RollbackProfileResult=INT({0:'ok',127:'undefinedError'});
+TY.SetFallbackAttributeResult=INT({0:'ok',1:'iccidOrAidNotFound',2:'fallbackNotAllowed',3:'fallbackProfileEnabled',127:'undefinedError'});
+TY.UnsetFallbackAttributeResult=INT({0:'ok',2:'noFallbackAttribute',3:'fallbackProfileEnabled',7:'commandError',127:'undefinedError'});
+TY.AddEimResult=CHOICE([A('associationToken','84',INT()),A('addEimResultCode','02',INT({0:'ok',1:'insufficientMemory',2:'associatedEimAlreadyExists',3:'ciPKUnknown',5:'invalidAssociationToken',6:'counterValueOutOfRange',7:'commandError',127:'undefinedError'}))]);
+TY.DeleteEimResult=INT({0:'ok',1:'eimNotFound',2:'lastEimDeleted',7:'commandError',127:'undefinedError'});
+TY.UpdateEimResult=INT({0:'ok',1:'eimNotFound',3:'ciPKUnknown',6:'counterValueOutOfRange',7:'commandError',127:'undefinedError'});
+TY.EimIdInfo=SEQ([F('eimId','80',UTF8()),F('eimIdType','82','EimIdType',1)]);
+TY.ListEimResult=CHOICE([A('eimIdList','A0',SEQOF('EimIdInfo')),A('listEimError','81',INT({127:'undefinedError'}))]);
+TY.ProfileInfo=SEQ([
+  F('iccid','5A','Iccid',1),F('isdpAid','4F',OCTETS(),1),F('profileState','9F70','ProfileState',1),F('profileNickname','90',UTF8(),1),
+  F('serviceProviderName','91',UTF8(),1),F('profileName','92',UTF8(),1),F('iconType','93','IconType',1),F('icon','94',OCTETS(),1),
+  F('profileClass','95','ProfileClass',1),F('notificationConfigurationInfo','B6',SEQOF('NotificationConfigurationInformation'),1),
+  F('profileOwner','B7','OperatorId',1),F('dpProprietaryData','B8','DpProprietaryData',1),F('profilePolicyRules','99','PprIds',1),
+  F('serviceSpecificDataStoredInEuicc','BF22','VendorSpecificExtension',1),F('ecallIndication','9F7B',BOOL(),1),
+  F('fallbackAttribute','9F26',BOOL(),1),F('fallbackAllowed','9F67',BOOL(),1)],'E3');
+TY.ProfileInfoListError=INT({1:'incorrectInputValues',11:'profileChangeOngoing',127:'undefinedError'});
+TY.ProfileInfoListResponse=CHOICE([A('profileInfoListOk','A0',SEQOF('ProfileInfo')),A('profileInfoListError','81','ProfileInfoListError')],'BF2D');
+TY.SetDefaultDpAddressResponse=SEQ([F('setDefaultDpAddressResult','02',INT({0:'ok',127:'undefinedError'}))],'BF65');
+TY.EuiccResultData=CHOICE([
+  A('enableResult','83','EnableProfileResult'),A('disableResult','84','DisableProfileResult'),A('deleteResult','85','DeleteProfileResult'),
+  A('listProfileInfoResult','BF2D','ProfileInfoListResponse'),A('getRATResult','A6','RulesAuthorisationTable'),
+  A('configureImmediateEnableResult','87','ConfigureImmediateEnableResult'),A('addEimResult','A8','AddEimResult'),
+  A('deleteEimResult','89','DeleteEimResult'),A('updateEimResult','8A','UpdateEimResult'),A('listEimResult','AB','ListEimResult'),
+  A('rollbackResult','8C','RollbackProfileResult'),A('setFallbackAttributeResult','8D','SetFallbackAttributeResult'),
+  A('unsetFallbackAttributeResult','8E','UnsetFallbackAttributeResult'),
+  A('processingTerminated','02',INT({1:'resultSizeOverflow',2:'unknownOrDamagedCommand',3:'interruption',127:'undefinedError'})),
+  A('setDefaultDpAddressResult','BF65','SetDefaultDpAddressResponse')]);
+TY.EuiccPackageResultDataSigned=SEQ([F('eimId','80',UTF8()),F('counterValue','81',INT()),F('eimTransactionId','82','TransactionId',1),F('seqNumber','83',INT()),F('euiccResult','30',SEQOF('EuiccResultData'))]);
+TY.EuiccPackageResultSigned=SEQ([F('euiccPackageResultDataSigned','30','EuiccPackageResultDataSigned'),F('euiccSignEPR','5F37',OCTETS())]);
+TY.EuiccPackageErrorCode=INT({3:'invalidEid',4:'replayError',6:'counterValueOutOfRange',15:'sizeOverflow',104:'ecallActive',127:'undefinedError'});
+TY.EuiccPackageErrorDataSigned=SEQ([F('eimId','80',UTF8()),F('counterValue','81',INT()),F('eimTransactionId','82','TransactionId',1),F('euiccPackageErrorCode','02','EuiccPackageErrorCode')]);
+TY.EuiccPackageErrorSigned=SEQ([F('euiccPackageErrorDataSigned','30','EuiccPackageErrorDataSigned'),F('euiccSignEPE','5F37',OCTETS())]);
+TY.EuiccPackageErrorUnsigned=SEQ([F('eimId','80',UTF8()),F('eimTransactionId','82','TransactionId',1),F('associationToken','84',INT(),1)]);
+TY.EuiccPackageResult=CHOICE([A('euiccPackageResultSigned','A0','EuiccPackageResultSigned'),A('euiccPackageErrorSigned','A1','EuiccPackageErrorSigned'),A('euiccPackageErrorUnsigned','A2','EuiccPackageErrorUnsigned')],'BF51');
+TY.ProfileInstallationResult=SEQ([F('profileInstallationResultData','BF27','ProfileInstallationResultData'),F('euiccSignPIR','5F37','EuiccSignPIR')],'BF37');
+TY.CompactSuccessResult=SEQ([F('compactAid','4F',OCTETS()),F('simaResponse','04',OCTETS(),1)]);
+TY.CompactProfileInstallationResultData=SEQ([F('transactionId','80','TransactionId'),F('seqNumber','02',INT()),F('iccidPresent','01',BOOL(),1),
+  F('compactFinalResult','A2',CHOICE([A('compactSuccessResult','A0','CompactSuccessResult'),A('errorResult','A1','ErrorResult')]))]);
+TY.CompactProfileInstallationResult=SEQ([F('compactProfileInstallationResultData','A0','CompactProfileInstallationResultData'),F('euiccSignPIR','5F37','EuiccSignPIR')]);
+TY.CompactOtherSignedNotification=SEQ([F('eidValue','5A','Octet16',1),F('tbsOtherNotification','BF2F','NotificationMetadata'),F('euiccNotificationSignature','5F37',OCTETS())]);
+TY.PendingNotification=CHOICE([A('profileInstallationResult','BF37','ProfileInstallationResult'),A('otherSignedNotification','30','OtherSignedNotification'),
+  A('compactProfileInstallationResult','A0','CompactProfileInstallationResult'),A('compactOtherSignedNotification','A1','CompactOtherSignedNotification')]);
+TY.PendingNotificationList=SEQOF('PendingNotification');
+TY.EuiccPackageResultList=SEQOF('EuiccPackageResult');
+TY.IpaCapabilities=SEQ([F('ipaFeatures','80',BITS(['directRspServerCommunication','indirectRspServerCommunication','eimDownloadDataHandling','eimCtxParams1Generation','eimProfileMetadataVerification','minimizeEsipaBytes'])),
+  F('ipaSupportedProtocols','81',BITS(['ipaRetrieveHttps','ipaRetrieveCoaps','ipaInjectHttps','ipaInjectCoaps','ipaProprietary']),1)]);
+TY.IoTSpecificInfo=SEQ([F('iotVersion','A0',SEQOF('VersionType')),F('ecallSupported','81',NULLT(),1),F('fallbackSupported','82',NULLT(),1)]);
+TY.IpaMode=INT({0:'ipad',1:'ipae'});
+TY.EUICCInfo2=SEQ([
+  F('profileVersion','81','VersionType'),F('svn','82','VersionType'),F('euiccFirmwareVer','83','VersionType'),F('extCardResource','84',OCTETS()),
+  F('uiccCapability','85','UICCCapability'),F('ts102241Version','86','VersionType',1),F('globalplatformVersion','87','VersionType',1),
+  F('rspCapability','88','RspCapability'),F('euiccCiPKIdListForVerification','A9',SEQOF('SubjectKeyIdentifier')),F('euiccCiPKIdListForSigning','AA',SEQOF('SubjectKeyIdentifier')),
+  F('euiccCategory','8B',INT({0:'other',1:'basicEuicc',2:'mediumEuicc',3:'contactlessEuicc'}),1),F('forbiddenProfilePolicyRules','99','PprIds',1),
+  F('ppVersion','04','VersionType'),F('sasAcreditationNumber','0C',UTF8()),F('certificationDataObject','AC','CertificationDataObject',1),
+  F('treProperties','8D',BITS(['isDiscrete','isIntegrated','usesRemoteMemory']),1),F('treProductReference','8E',UTF8(),1),
+  F('additionalEuiccProfilePackageVersions','AF',SEQOF('VersionType'),1),F('ipaMode','90','IpaMode',1),F('euiccCiPKIdListForSigningV3','B1',SEQOF('SubjectKeyIdentifier'),1),
+  F('additionalEuiccInfo','92',OCTETS(),1),F('highestSvn','93','VersionType',1),F('iotSpecificInfo','B4','IoTSpecificInfo',1)],'BF22');
+TY.IpaEuiccData=SEQ([
+  F('notificationsList','A0','PendingNotificationList',1),F('defaultSmdpAddress','81',UTF8(),1),F('euiccPackageResultList','A2','EuiccPackageResultList',1),
+  F('euiccInfo1','BF20','EUICCInfo1',1),F('euiccInfo2','BF22','EUICCInfo2',1),F('rootSmdsAddress','83',UTF8(),1),F('associationToken','84',INT(),1),
+  F('eumCertificate','A5','Certificate',1),F('euiccCertificate','A6','Certificate',1),F('eimTransactionId','87','TransactionId',1),
+  F('ipaCapabilities','A8','IpaCapabilities',1),F('deviceInfo','A9','DeviceInfo',1)]);
+TY.IpaEuiccDataErrorCode=INT({1:'incorrectTagList',5:'euiccCiPKIdNotFound',104:'ecallActive',127:'undefinedError'});
+TY.IpaEuiccDataResponseError=SEQ([F('eimTransactionId','80','TransactionId',1),F('ipaEuiccDataErrorCode','02','IpaEuiccDataErrorCode')]);
+TY.IpaEuiccDataResponse=CHOICE([A('ipaEuiccData','A0','IpaEuiccData'),A('ipaEuiccDataResponseError','A1','IpaEuiccDataResponseError')],'BF52');
+TY.ProfileDownloadTriggerResult=SEQ([F('eimTransactionId','82','TransactionId',1),
+  F('profileDownloadTriggerResultData',null,CHOICE([A('profileInstallationResult','BF37','ProfileInstallationResult'),
+    A('profileDownloadError','30',SEQ([F('profileDownloadErrorReason','80',INT({104:'ecallActive',127:'undefinedError'})),F('errorResponse','04',OCTETS(),1)]))]))],'BF54');
+
+/* ---------- ES10b (IPA ↔ eUICC) ---------- */
+TY.ISDRProprietaryApplicationTemplateIoT=SEQ([F('euiccConfiguration','80',BITS(['ipaeSupported','enabledProfile']))],'E1');
+TY.IpaeActivationRequest=SEQ([F('ipaeOption','80',BITS(['activateIpae']))],'BF42');
+TY.IpaeActivationResponse=SEQ([F('ipaeActivationResult','80',INT({0:'ok',1:'notSupported'}))],'BF42');
+TY.AddInitialEimRequest=SEQ([F('eimConfigurationDataList','A0',SEQOF('EimConfigurationData'))],'BF57');
+TY.AddInitialEimResponse=CHOICE([A('addInitialEimOk','A0',SEQOF(CHOICE([A('associationToken','84',INT()),A('addOk','05',NULLT())]))),
+  A('addInitialEimError','81',INT({1:'insufficientMemory',2:'associatedEimAlreadyExists',3:'ciPKUnknown',5:'invalidAssociationToken',6:'counterValueOutOfRange',7:'commandError',127:'undefinedError'}))],'BF57');
+TY.EuiccMemoryResetRequest=SEQ([F('resetOptions','82',BITS(['deleteOperationalProfiles','deleteFieldLoadedTestProfiles','resetDefaultSmdpAddress','deletePreLoadedTestProfiles','deleteProvisioningProfiles','resetEimConfigData','resetImmediateEnableConfig']))],'BF64');
+TY.EuiccMemoryResetResponse=SEQ([F('resetResult','80',INT({0:'ok',1:'nothingToDelete',5:'catBusy',104:'ecallActive',127:'undefinedError'})),
+  F('resetEimResult','81',INT({0:'ok',1:'nothingToDelete',2:'eimResetNotSupported',127:'undefinedError'}),1),
+  F('resetImmediateEnableConfigResult','82',INT({0:'ok',1:'resetIECNotSupported',127:'undefinedError'}),1)],'BF64');
+TY.GetCertsRequest=SEQ([F('euiccCiPKId','80','SubjectKeyIdentifier',1)],'BF56');
+TY.GetCertsResponse=CHOICE([A('certs','A0',SEQ([F('eumCertificate','A5','Certificate'),F('euiccCertificate','A6','Certificate')])),A('getCertsError','81',INT({1:'invalidCiPKId',127:'undfinedError'}))],'BF56');
+TY.RetrieveNotificationsListRequest=SEQ([F('searchCriteria','A0',CHOICE([A('seqNumber','80',INT()),A('profileManagementOperation','81','NotificationEvent'),A('euiccPackageResults','82',NULLT())]),1)],'BF2B');
+TY.RetrieveNotificationsListResponse=CHOICE([A('notificationList','A0','PendingNotificationList'),A('notificationsListResultError','81',INT({127:'undefinedError'})),A('euiccPackageResultList','A2','EuiccPackageResultList')],'BF2B');
+TY.ImmediateEnableRequest=SEQ([F('refreshFlag','80',BOOL())],'BF5A');
+TY.ImmediateEnableResponse=SEQ([F('immediateEnableResult','80',INT({0:'ok',1:'immediateEnableNotAvailable',4:'noSessionContext',5:'catBusy',127:'undefinedError'}))],'BF5A');
+TY.ProfileRollbackRequest=SEQ([F('refreshFlag','80',BOOL())],'BF58');
+TY.ProfileRollbackResponse=SEQ([F('cmdResult','02',INT({0:'ok',1:'rollbackNotAllowed',5:'catBusy',7:'commandError',127:'undefinedError'})),F('eUICCPackageResult','BF51','EuiccPackageResult',1)],'BF58');
+TY.ConfigureImmediateProfileEnablingRequest=SEQ([F('immediateEnableFlag','80',NULLT(),1),F('defaultSmdpOid','81',OID(),1),F('defaultSmdpAddress','82',UTF8(),1)],'BF59');
+TY.ConfigureImmediateProfileEnablingResponse=SEQ([F('configImmediateEnableResult','80',INT({0:'ok',1:'insufficientMemory',2:'associatedEimAlreadyExists',127:'undefinedError'}))],'BF59');
+TY.GetEimConfigurationDataRequest=SEQ([F('searchCriteria','A0',CHOICE([A('eimId','80',UTF8())]),1)],'BF55');
+TY.GetEimConfigurationDataResponse=SEQ([F('eimConfigurationDataList','A0',SEQOF('EimConfigurationData'))],'BF55');
+TY.ExecuteFallbackMechanismRequest=SEQ([F('refreshFlag','80',BOOL())],'BF5D');
+TY.ExecuteFallbackMechanismResponse=SEQ([F('executeFallbackMechanismResult','80',INT({0:'ok',2:'profileNotInDisabledState',5:'catBusy',6:'fallbackNotAvailable',7:'commandError',104:'ecallActive',127:'undefinedError'}))],'BF5D');
+TY.ReturnFromFallbackRequest=SEQ([F('refreshFlag','80',BOOL())],'BF5E');
+TY.ReturnFromFallbackResponse=SEQ([F('returnFromFallbackResult','80',INT({0:'ok',5:'catBusy',6:'fallbackNotAvailable',7:'commandError',127:'undefinedError'}))],'BF5E');
+TY.EnableEmergencyProfileRequest=SEQ([F('refreshFlag','80',BOOL())],'BF5B');
+TY.EnableEmergencyProfileResponse=SEQ([F('enableEmergencyProfileResult','80',INT({0:'ok',2:'profileNotInDisabledState',5:'catBusy',8:'ecallNotAvailable',127:'undefinedError'}))],'BF5B');
+TY.DisableEmergencyProfileRequest=SEQ([F('refreshFlag','80',BOOL())],'BF5C');
+TY.DisableEmergencyProfileResponse=SEQ([F('disableEmergencyProfileResult','80',INT({0:'ok',2:'profileNotInEnabledState',5:'catBusy',127:'undefinedError'}))],'BF5C');
+TY.GetConnectivityParametersRequest=SEQ([],'BF5F');
+TY.GetConnectivityParametersResponse=CHOICE([A('connectivityParameters','A0',SEQ([F('httpParams','81',OCTETS(),1)])),A('connectivityParametersError','81',INT({1:'parametersNotAvailable',127:'undefinedError'}))],'BF5F');
+
+/* ---------- ESipa compact/regular ES10b responses carried to eIM ---------- */
+TY.CompactEuiccSigned2=SEQ([F('euiccOtpk','5F49',OCTETS(),1),F('hashCc','04',OCTETS(),1)]);
+TY.CompactPrepareDownloadResponseOk=SEQ([F('compactEuiccSigned2','30','CompactEuiccSigned2'),F('euiccSignature2','5F37',OCTETS())]);
+TY.PrepareDownloadResponse=CHOICE([A('downloadResponseOk','A0','PrepareDownloadResponseOk'),A('downloadResponseError','A1','PrepareDownloadResponseError'),A('compactDownloadResponseOk','A2','CompactPrepareDownloadResponseOk')],'BF21');
+TY.EuiccSigned1=SEQ([F('transactionId','80','TransactionId'),F('serverAddress','83',UTF8()),F('serverChallenge','84','Octet16'),F('euiccInfo2','BF22','EUICCInfo2'),F('ctxParams1',null,'CtxParams1')]);
+TY.AuthenticateResponseOk=SEQ([F('euiccSigned1','30','EuiccSigned1'),F('euiccSignature1','5F37',OCTETS()),F('euiccCertificate','30','Certificate'),F('eumCertificate','30','Certificate')]);
+TY.CompactEuiccSigned1=SEQ([F('extCardResource','84',OCTETS()),F('ctxParams1','A2','CtxParams1',1)]);
+TY.CompactAuthenticateResponseOk=SEQ([F('signedData',null,CHOICE([A('euiccSigned1','30','EuiccSigned1'),A('compactEuiccSigned1','A0','CompactEuiccSigned1')])),F('euiccSignature1','5F37',OCTETS()),F('euiccCertificate','A1','Certificate',1),F('eumCertificate','A2','Certificate',1)]);
+TY.AuthenticateServerResponse=CHOICE([A('authenticateResponseOk','A0','AuthenticateResponseOk'),A('authenticateResponseError','A1','AuthenticateResponseError'),A('compactAuthenticateResponseOk','A2','CompactAuthenticateResponseOk')],'BF38');
+TY.CompactEuiccCancelSessionSigned=SEQ([F('reason','02','CancelSessionReason',1)]);
+TY.CompactCancelSessionResponseOk=SEQ([F('compactEuiccCancelSessionSigned','30','CompactEuiccCancelSessionSigned'),F('euiccCancelSessionSignature','5F37',OCTETS())]);
+TY.CancelSessionResponse=CHOICE([A('cancelSessionResponseOk','A0','CancelSessionResponseOk'),A('cancelSessionResponseError','81',INT({5:'invalidTransactionId',127:'undefinedError'})),A('compactCancelSessionResponseOk','A2','CompactCancelSessionResponseOk')],'BF41');
+TY.StoreMetadataRequest=SEQ([F('iccid','5A','Iccid'),F('serviceProviderName','91',UTF8()),F('profileName','92',UTF8()),F('iconType','93','IconType',1),F('icon','94',OCTETS(),1),
+  F('profileClass','95','ProfileClass',1),F('notificationConfigurationInfo','B6',SEQOF('NotificationConfigurationInformation'),1),F('profileOwner','B7','OperatorId',1),
+  F('profilePolicyRules','99','PprIds',1),F('serviceSpecificDataStoredInEuicc','BF22','VendorSpecificExtension',1),F('serviceSpecificDataNotStoredInEuicc','BF23','VendorSpecificExtension',1),
+  F('ecallIndication','9F7B',BOOL(),1),F('fallbackAllowed','9F67',BOOL(),1)],'BF25');
+
+/* ---------- 6.3 ESipa messages ---------- */
+TY.InitiateAuthenticationRequestEsipa=SEQ([F('euiccChallenge','81','Octet16'),F('smdpAddress','83',UTF8(),1),F('euiccInfo1','BF20','EUICCInfo1',1),F('eimTransactionId','82','TransactionId',1)],'BF39');
+TY.InitiateAuthenticationOkEsipa=SEQ([F('transactionId','80','TransactionId',1),F('serverSigned1','30','ServerSigned1'),F('serverSignature1','5F37',OCTETS()),F('euiccCiPKIdentifierToBeUsed','04',OCTETS()),F('serverCertificate','30','Certificate'),F('matchingId','0C',UTF8(),1),F('ctxParams1','A2','CtxParams1',1)]);
+TY.InitiateAuthenticationResponseEsipa=CHOICE([A('initiateAuthenticationOkEsipa','A0','InitiateAuthenticationOkEsipa'),
+  A('initiateAuthenticationErrorEsipa','81',INT({1:'invalidDpAddress',2:'euiccVersionNotSupportedByDp',3:'ciPKIdNotSupported',50:'smdpAddressMismatch',51:'smdpOidMismatch',52:'invalidEimTransactionId',127:'undefinedError'}))],'BF39');
+TY.AuthenticateClientRequestEsipa=SEQ([F('transactionId','80','TransactionId'),F('authenticateServerResponse','BF38','AuthenticateServerResponse')],'BF3B');
+TY.AuthenticateClientOkDPEsipa=SEQ([F('transactionId','80','TransactionId',1),F('profileMetaData','BF25','StoreMetadataRequest',1),F('smdpSigned2','30','SmdpSigned2'),F('smdpSignature2','5F37',OCTETS()),F('smdpCertificate','30','Certificate'),F('hashCc','04',OCTETS(),1)]);
+TY.AuthenticateClientOkDSEsipa=SEQ([F('transactionId','80','TransactionId'),F('profileDownloadTrigger','BF54','ProfileDownloadTriggerRequest',1)]);
+TY.AuthenticateClientResponseEsipa=CHOICE([A('authenticateClientOkDPEsipa','A0','AuthenticateClientOkDPEsipa'),A('authenticateClientOkDSEsipa','A1','AuthenticateClientOkDSEsipa'),
+  A('authenticateClientErrorEsipa','82',INT({1:'eumCertificateInvalid',2:'eumCertificateExpired',3:'euiccCertificateInvalid',4:'euiccCertificateExpired',5:'euiccSignatureInvalid',6:'matchingIdRefused',7:'eidMismatch',8:'noEligibleProfile',9:'ciPKUnknown',10:'invalidTransactionId',11:'insufficientMemory',50:'pprNotAllowed',56:'eventIdUnknown',127:'undefinedError'}))],'BF3B');
+TY.GetBoundProfilePackageRequestEsipa=SEQ([F('transactionId','80','TransactionId'),F('prepareDownloadResponse','BF21','PrepareDownloadResponse')],'BF3A');
+TY.GetBoundProfilePackageOkEsipa=SEQ([F('transactionId','80','TransactionId',1),F('boundProfilePackage','BF36','BoundProfilePackage')]);
+TY.GetBoundProfilePackageResponseEsipa=CHOICE([A('getBoundProfilePackageOkEsipa','A0','GetBoundProfilePackageOkEsipa'),
+  A('getBoundProfilePackageErrorEsipa','81',INT({1:'euiccSignatureInvalid',2:'confirmationCodeMissing',3:'confirmationCodeRefused',4:'confirmationCodeRetriesExceeded',5:'bppRebindingRefused',6:'downloadOrderExpired',50:'metadataMismatch',95:'invalidTransactionId',127:'undefinedError'}))],'BF3A');
+TY.StateChangeCause=INT({0:'otherEim',1:'fallback',2:'emergencyProfile',3:'local',4:'reset',5:'immediateEnableProfile',6:'deviceChange',127:'undefined'});
+TY.EimPackageResultResponseError=SEQ([F('eimTransactionId','80','TransactionId',1),F('eimPackageResultErrorCode','02',INT({1:'invalidPackageFormat',2:'unknownPackage',127:'undefinedError'}))]);
+TY.EimPackageResult=CHOICE([A('euiccPackageResult','BF51','EuiccPackageResult'),
+  A('ePRAndNotifications','30',SEQ([F('euiccPackageResult','BF51','EuiccPackageResult'),F('notificationList','A0','PendingNotificationList')])),
+  A('ipaEuiccDataResponse','BF52','IpaEuiccDataResponse'),A('profileDownloadTriggerResult','BF54','ProfileDownloadTriggerResult'),A('eimPackageResultResponseError','A0','EimPackageResultResponseError')]);
+TY.ProvideEimPackageResult=SEQ([F('eidValue','5A','Octet16',1),F('eimPackageResult',null,'EimPackageResult')],'BF50');
+TY.HandleNotificationEsipa=CHOICE([A('pendingNotification','A0','PendingNotification'),A('provideEimPackageResult','BF50','ProvideEimPackageResult')],'BF3D');
+TY.CancelSessionRequestEsipa=SEQ([F('transactionId','04','TransactionId'),F('cancelSessionResponse','BF41','CancelSessionResponse')],'BF41');
+TY.CancelSessionResponseEsipa=CHOICE([A('cancelSessionOk','A0',SEQ([])),A('cancelSessionError','81',INT({1:'invalidTransactionId',2:'euiccSignatureInvalid',127:'undefinedError'}))],'BF41');
+TY.GetEimPackageRequest=SEQ([F('eidValue','5A','Octet16'),F('notifyStateChange','80',NULLT(),1),F('stateChangeCause','81','StateChangeCause',1),F('rPLMN','82',OCTETS(),1)],'BF4F');
+TY.GetEimPackageResponse=CHOICE([A('euiccPackageRequest','BF51','EuiccPackageRequest'),A('ipaEuiccDataRequest','BF52','IpaEuiccDataRequest'),A('profileDownloadTriggerRequest','BF54','ProfileDownloadTriggerRequest'),
+  A('eimPackageError','02',INT({1:'noEimPackageAvailable',2:'eidNotFound',3:'invalidEid',4:'missingEid',127:'undefinedError'}))],'BF4F');
+TY.ProvideEimPackageResultResponse=CHOICE([A('eimAcknowledgements','BF53','EimAcknowledgements'),A('emptyResponse','30',SEQ([])),A('provideEimPackageResultError','02',INT({2:'eidNotFound',3:'invalidEid',4:'missingEid',127:'undefinedError'}))],'BF50');
+TY.TransferEimPackageRequest=CHOICE([A('euiccPackageRequest','BF51','EuiccPackageRequest'),A('ipaEuiccDataRequest','BF52','IpaEuiccDataRequest'),A('eimAcknowledgements','BF53','EimAcknowledgements'),A('profileDownloadTriggerRequest','BF54','ProfileDownloadTriggerRequest')],'BF4E');
+TY.TransferEimPackageResponse=CHOICE([A('euiccPackageResult','BF51','EuiccPackageResult'),
+  A('ePRAndNotifications','30',SEQ([F('euiccPackageResult','BF51','EuiccPackageResult'),F('notificationList','A0','PendingNotificationList')])),
+  A('ipaEuiccDataResponse','BF52','IpaEuiccDataResponse'),A('eimPackageReceived','05',NULLT()),A('eimPackageError','02',INT({1:'invalidPackageFormat',2:'unknownPackage',127:'undefinedError'}))],'BF4E');
+
+/* Root message candidates for auto-detect / dropdown */
+const ROOTS=[
+  ['ESipa: eIM → IPA', ['GetEimPackageResponse','TransferEimPackageRequest','ProvideEimPackageResultResponse','InitiateAuthenticationResponseEsipa','AuthenticateClientResponseEsipa','GetBoundProfilePackageResponseEsipa','CancelSessionResponseEsipa']],
+  ['ESipa: IPA → eIM', ['GetEimPackageRequest','TransferEimPackageResponse','ProvideEimPackageResult','HandleNotificationEsipa','InitiateAuthenticationRequestEsipa','AuthenticateClientRequestEsipa','GetBoundProfilePackageRequestEsipa','CancelSessionRequestEsipa']],
+  ['eUICC Package (2.11)', ['EuiccPackageRequest','EuiccPackageResult','IpaEuiccDataRequest','IpaEuiccDataResponse','ProfileDownloadTriggerRequest','ProfileDownloadTriggerResult','EimAcknowledgements']],
+  ['ES10b requests', ['AddInitialEimRequest','EuiccMemoryResetRequest','GetCertsRequest','RetrieveNotificationsListRequest','ImmediateEnableRequest','ProfileRollbackRequest','ConfigureImmediateProfileEnablingRequest','GetEimConfigurationDataRequest','ExecuteFallbackMechanismRequest','ReturnFromFallbackRequest','EnableEmergencyProfileRequest','DisableEmergencyProfileRequest','GetConnectivityParametersRequest','IpaeActivationRequest']],
+  ['ES10b responses', ['AddInitialEimResponse','EuiccMemoryResetResponse','GetCertsResponse','RetrieveNotificationsListResponse','ImmediateEnableResponse','ProfileRollbackResponse','ConfigureImmediateProfileEnablingResponse','GetEimConfigurationDataResponse','ExecuteFallbackMechanismResponse','ReturnFromFallbackResponse','EnableEmergencyProfileResponse','DisableEmergencyProfileResponse','GetConnectivityParametersResponse','IpaeActivationResponse','EUICCInfo2','ProfileInfoListResponse','PrepareDownloadResponse','AuthenticateServerResponse','CancelSessionResponse','ISDRProprietaryApplicationTemplateIoT']],
+  ['Notifications / misc', ['ProfileInstallationResult','OtherSignedNotification','CompactOtherSignedNotification','EimConfigurationData','StoreMetadataRequest','ProfileInfo']]
+];
+
+/* ============================================================
+   BER parsing
+   ============================================================ */
+function hexToBytes(s){
+  s=s.replace(/0x/gi,'').replace(/[^0-9a-fA-F]/g,'');
+  if(s.length%2) throw new Error('Odd number of hex digits ('+s.length+').');
+  const b=new Uint8Array(s.length/2);
+  for(let i=0;i<b.length;i++) b[i]=parseInt(s.substr(i*2,2),16);
+  return b;
+}
+const hx=(bytes,a,b)=>{let s='';for(let i=a;i<b;i++)s+=bytes[i].toString(16).padStart(2,'0').toUpperCase();return s;};
+
+function parseBER(bytes,start,end,depth){
+  const nodes=[];let p=start;
+  while(p<end){
+    const n={start:p,depth};
+    let t=p;
+    if(t>=end) throw new Error('Truncated tag at offset '+p);
+    const first=bytes[t++];
+    n.constructed=!!(first&0x20);
+    if((first&0x1f)===0x1f){ while(t<end && (bytes[t]&0x80)) t++; if(t>=end) throw new Error('Truncated multi-byte tag at offset '+p); t++; }
+    n.tag=hx(bytes,p,t);
+    if(t>=end) throw new Error('Missing length after tag '+n.tag+' at offset '+p);
+    const l0=bytes[t++];let len;
+    if(l0<0x80) len=l0;
+    else if(l0===0x80) throw new Error('Indefinite length at offset '+(t-1)+' is not allowed in DER.');
+    else{ const k=l0&0x7f; if(k>4) throw new Error('Length field too long at offset '+(t-1)); if(t+k>end) throw new Error('Truncated length at offset '+(t-1)); len=0; for(let i=0;i<k;i++) len=len*256+bytes[t++]; }
+    n.lenHex=hx(bytes,p+n.tag.length/2,t).replace(/(..)(?=.)/g,'$1 ');
+    n.len=len; n.valStart=t; n.end=t+len;
+    if(n.end>end) throw new Error(`Tag ${n.tag} at offset ${p} declares ${len} bytes but only ${end-t} remain.`);
+    if(n.constructed){ try{ n.children=parseBER(bytes,t,n.end,depth+1); }catch(e){ n.children=null; n.childError=e.message; } }
+    nodes.push(n); p=n.end;
+  }
+  return nodes;
+}
+
+/* ============================================================
+   Value decoders
+   ============================================================ */
+function decInt(bytes,a,b){
+  if(b-a===0) return 0n;
+  let v=0n; for(let i=a;i<b;i++) v=(v<<8n)|BigInt(bytes[i]);
+  if(bytes[a]&0x80) v-= (1n<<BigInt(8*(b-a)));
+  return v;
+}
+function decOID(bytes,a,b){
+  if(b-a===0) return '';
+  const out=[];let v=0;let firstDone=false;
+  for(let i=a;i<b;i++){ v=v*128+(bytes[i]&0x7f); if(!(bytes[i]&0x80)){ if(!firstDone){ if(v<40)out.push(0,v);else if(v<80)out.push(1,v-40);else out.push(2,v-80); firstDone=true;} else out.push(v); v=0; } }
+  return out.join('.');
+}
+function decUTF8(bytes,a,b){ try{ return new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(a,b)); }catch(e){ return null; } }
+function decIccid(bytes,a,b){ let s='';for(let i=a;i<b;i++){const x=bytes[i];s+=(x&0xf).toString(16)+(x>>4).toString(16);} return s.replace(/f+$/i,'').toUpperCase(); }
+function decBits(bytes,a,b,names){
+  if(b-a===0) return {set:[],unused:0};
+  const unused=bytes[a];const set=[];
+  for(let i=a+1;i<b;i++) for(let bit=0;bit<8;bit++){ if(bytes[i]&(0x80>>bit)){ const idx=(i-a-1)*8+bit; set.push(names&&names[idx]?names[idx]+'('+idx+')':'bit'+idx); } }
+  return {set,unused};
+}
+const UNIVERSAL={'01':'BOOLEAN','02':'INTEGER','03':'BIT STRING','04':'OCTET STRING','05':'NULL','06':'OBJECT IDENTIFIER','0C':'UTF8String','13':'PrintableString','16':'IA5String','17':'UTCTime','18':'GeneralizedTime','30':'SEQUENCE','31':'SET','A0':'[0]','A1':'[1]','A2':'[2]','A3':'[3]'};
+
+/* ============================================================
+   Schema-driven annotation
+   ============================================================ */
+const resolve=t=>typeof t==='string'?(TY[t]||(()=>{throw new Error('Unknown type '+t)})()):t;
+const universalTag={INT:'02',UTF8:'0C',OCTETS:'04',NULL:'05',BOOL:'01',OID:'06',BITS:'03',ICCID:'5A',EID:'04',VERSION:'04',CERT:'30',SEQ:'30',SEQOF:'30',ANY:null};
+function tagsOf(type,fieldTag){
+  type=resolve(type);
+  if(fieldTag) return [fieldTag];
+  if(type.tag) return [type.tag];
+  if(type.kind==='CHOICE'){ let r=[]; for(const a of type.alts) r=r.concat(tagsOf(a.ty,a.t)); return r; }
+  if(type.kind==='ANY') return null;   // matches anything
+  return [universalTag[type.kind]];
+}
+const matches=(tags,tag)=>tags===null||tags.includes(tag);
+
+function annotate(node,type,name,fieldTag,bytes,issues){
+  type=resolve(type);
+  node.name=name;
+  if(type.kind==='CHOICE'){
+    const wrapper=fieldTag||type.tag;
+    if(wrapper){
+      node.kindLabel='CHOICE';
+      if(!node.children||node.children.length!==1){ node.bad='expected exactly one alternative inside'; issues.push(`${name}: ${node.bad}`); (node.children||[]).forEach(c=>generic(c,bytes)); return; }
+      const inner=node.children[0];
+      return chooseAlt(inner,type,bytes,issues,name);
+    }
+    return chooseAlt(node,type,bytes,issues,name);
+  }
+  primitiveOrStruct(node,type,bytes,issues);
+}
+function chooseAlt(node,choice,bytes,issues,parentName){
+  for(const a of choice.alts){ if(matches(tagsOf(a.ty,a.t),node.tag)){ node.isAlt=true; return annotate(node,a.ty,a.n,a.t,bytes,issues); } }
+  node.name='?'; node.bad=`no alternative of ${parentName} matches tag ${node.tag}`; issues.push(node.bad); generic(node,bytes,true);
+}
+function primitiveOrStruct(node,type,bytes,issues){
+  const {valStart:a,end:b}=node; const len=b-a;
+  switch(type.kind){
+    case 'SEQ':{
+      node.kindLabel='SEQUENCE';
+      if(!node.children){ node.bad=node.childError||'expected constructed'; issues.push(`${node.name}: ${node.bad}`); return; }
+      let fi=0;
+      for(const c of node.children){
+        let matched=false;
+        while(fi<type.fields.length){
+          const f=type.fields[fi];
+          if(matches(tagsOf(f.ty,f.t),c.tag)){ annotate(c,f.ty,f.n,f.t,bytes,issues); fi++; matched=true; break; }
+          if(!f.opt) issues.push(`${node.name}: mandatory field ${f.n} missing before tag ${c.tag}`);
+          fi++;
+        }
+        if(!matched){ c.name='?'; c.bad=`unexpected tag ${c.tag} in ${node.name}`; issues.push(c.bad); generic(c,bytes,true); }
+      }
+      for(;fi<type.fields.length;fi++) if(!type.fields[fi].opt) issues.push(`${node.name}: mandatory field ${type.fields[fi].n} missing`);
+      return;
+    }
+    case 'SEQOF':{
+      node.kindLabel='SEQUENCE OF';
+      if(!node.children){ node.bad=node.childError||'expected constructed'; issues.push(`${node.name}: ${node.bad}`); return; }
+      node.children.forEach((c,i)=>{
+        if(matches(tagsOf(type.of),c.tag)) annotate(c,type.of,`[${i}]`,null,bytes,issues);
+        else { c.name='?'; c.bad=`unexpected tag ${c.tag} in ${node.name}`; issues.push(c.bad); generic(c,bytes,true); }
+      });
+      return;
+    }
+    case 'INT':{ const v=decInt(bytes,a,b); const nm=type.names&&type.names[Number(v)]; node.val= nm?`${nm} (${v})`:`${v}`; return; }
+    case 'BOOL':{ node.val= len===1 ? (bytes[a]?'TRUE':'FALSE') : 'invalid BOOLEAN'; return; }
+    case 'NULL':{ node.val= len===0 ? 'NULL (present)' : 'NULL with unexpected content'; return; }
+    case 'UTF8':{ const s=decUTF8(bytes,a,b); node.val= s===null?'invalid UTF-8':JSON.stringify(s); return; }
+    case 'OID':{ node.val=decOID(bytes,a,b); return; }
+    case 'BITS':{ const r=decBits(bytes,a,b,type.names); node.val= r.set.length?`{ ${r.set.join(', ')} }`:'{ }'; return; }
+    case 'ICCID':{ node.val=decIccid(bytes,a,b); return; }
+    case 'EID':{ node.val= len===16 ? hx(bytes,a,b) : `(${len} bytes)`; return; }
+    case 'VERSION':{ node.val= len===3 ? `${bytes[a]}.${bytes[a+1]}.${bytes[a+2]}` : `(${len} bytes)`; return; }
+    case 'OCTETS':{ node.note= len>16?`(${len} bytes)`:''; return; }
+    case 'CERT':{ node.kindLabel='Certificate (X.509)'; if(node.children) node.children.forEach(c=>generic(c,bytes)); return; }
+    case 'ANY':{ node.kindLabel=type.label||''; if(node.children) node.children.forEach(c=>generic(c,bytes)); else genericValue(node,bytes); return; }
+  }
+}
+function generic(node,bytes,keepName){
+  if(!keepName) node.name= UNIVERSAL[node.tag] || (node.constructed?'constructed':'primitive');
+  node.generic=true;
+  if(node.children) node.children.forEach(c=>generic(c,bytes)); else genericValue(node,bytes);
+}
+function genericValue(node,bytes){
+  const {valStart:a,end:b}=node;
+  if(node.tag==='02'&&b-a<=8) node.val=String(decInt(bytes,a,b));
+  else if(node.tag==='06') node.val=decOID(bytes,a,b);
+  else if(node.tag==='0C'||node.tag==='13'||node.tag==='16'||node.tag==='17'||node.tag==='18'){ const s=decUTF8(bytes,a,b); if(s!==null&&/^[\x20-\x7e]*$/.test(s)) node.val=JSON.stringify(s); }
+  else if(node.tag==='05') node.val='NULL';
+  else if(node.tag==='01'&&b-a===1) node.val=bytes[a]?'TRUE':'FALSE';
+}
+
+/* ============================================================
+   Auto-detect
+   ============================================================ */
+function allRootNames(){ const r=[]; for(const [,names] of ROOTS) for(const n of names) r.push(n); return r; }
+function tryRoot(rootNode,typeName,bytes){
+  const issues=[]; const clone=JSON.parse(JSON.stringify(rootNode));
+  try{ annotate(clone,typeName,typeName,null,bytes,issues); }catch(e){ issues.push(e.message); }
+  return {node:clone,issues,typeName};
+}
+function detect(rootNode,bytes){
+  const cands=allRootNames().filter(n=>matches(tagsOf(n),rootNode.tag));
+  if(!cands.length) return null;
+  let best=null;
+  for(const c of cands){ const r=tryRoot(rootNode,c,bytes); if(!best||r.issues.length<best.issues.length) best=r; if(!r.issues.length) break; }
+  best.candidates=cands; return best;
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const COL=54;
+function renderLines(node,bytes,opts,out){
+  const ind=opts.indent?'  '.repeat(node.depth):'';
+  const valHex=(!node.constructed||node.generic&&!node.children)&&opts.showhex&&node.len>0?hx(bytes,node.valStart,node.end):'';
+  let left=`${ind}${node.tag} ${node.lenHex}${valHex?' '+valHex:''}`;
+  let leftHtml=`${esc(ind)}<span class="t">${node.tag}</span> <span class="l">${node.lenHex}</span>${valHex?' <span class="v">'+valHex+'</span>':''}`;
+  let right='';
+  const nm=node.name||'';
+  if(node.constructed){
+    right=nm+(node.kindLabel&&node.kindLabel!=='SEQUENCE'&&node.kindLabel!=='CHOICE'&&node.kindLabel!=='SEQUENCE OF'?` ${node.kindLabel}`:'')+` (${node.len} bytes)`;
+  }else{
+    right=nm+(node.val?` = ${node.val}`:'')+(node.note?` ${node.note}`:'');
+  }
+  if(node.bad) right+=`   ← ${node.bad}`;
+  let rightHtml=`<span class="${node.bad?'u':(node.generic?'d':'n')}">${esc(nm)}</span>`;
+  if(node.constructed){ const extra=node.kindLabel&&!['SEQUENCE','CHOICE','SEQUENCE OF'].includes(node.kindLabel)?` ${node.kindLabel}`:''; rightHtml+=`<span class="d">${esc(extra)} (${node.len} bytes)</span>`; }
+  else if(node.val) rightHtml+=`<span class="d"> = </span><span class="v">${esc(node.val)}</span>`;
+  if(!node.constructed&&node.note) rightHtml+=`<span class="d"> ${esc(node.note)}</span>`;
+  if(node.bad) rightHtml+=`<span class="x">   ← ${esc(node.bad)}</span>`;
+  let text,html;
+  if(left.length<=COL-1){ const pad=' '.repeat(COL-left.length); text=left+pad+right; html=leftHtml+pad+rightHtml; }
+  else { text=left+'\n'+' '.repeat(COL)+right; html=leftHtml+'\n'+' '.repeat(COL)+rightHtml; }
+  out.text.push(text);
+  out.html.push(`<span class="ln" data-a="${node.start}" data-b="${node.end}" data-v="${node.valStart}">${html}</span>`);
+  if(node.children) node.children.forEach(c=>renderLines(c,bytes,opts,out));
+}
+
+
+/* ============================================================
+   Summary heading
+   ============================================================ */
+const FRIENDLY={
+  GetEimPackageResponse:'eIM Package response (eIM → IPA)', GetEimPackageRequest:'GetEimPackage request (IPA → eIM)',
+  TransferEimPackageRequest:'TransferEimPackage request (eIM → IPA)', TransferEimPackageResponse:'TransferEimPackage response (IPA → eIM)',
+  ProvideEimPackageResult:'ProvideEimPackageResult (IPA → eIM)', ProvideEimPackageResultResponse:'ProvideEimPackageResult response (eIM → IPA)',
+  HandleNotificationEsipa:'HandleNotification (IPA → eIM)', EuiccPackageRequest:'eUICC Package request', EuiccPackageResult:'eUICC Package result',
+  IpaEuiccDataRequest:'IPA/eUICC data request', IpaEuiccDataResponse:'IPA/eUICC data response',
+  ProfileDownloadTriggerRequest:'Profile download trigger', ProfileDownloadTriggerResult:'Profile download trigger result', EimAcknowledgements:'eIM acknowledgements',
+  InitiateAuthenticationRequestEsipa:'ESipa InitiateAuthentication request', InitiateAuthenticationResponseEsipa:'ESipa InitiateAuthentication response',
+  AuthenticateClientRequestEsipa:'ESipa AuthenticateClient request', AuthenticateClientResponseEsipa:'ESipa AuthenticateClient response',
+  GetBoundProfilePackageRequestEsipa:'ESipa GetBoundProfilePackage request', GetBoundProfilePackageResponseEsipa:'ESipa GetBoundProfilePackage response',
+  CancelSessionRequestEsipa:'ESipa CancelSession request', CancelSessionResponseEsipa:'ESipa CancelSession response'
+};
+const ALT_LABEL={euiccPackageRequest:'eUICC Package request',euiccPackageResult:'eUICC Package result',ipaEuiccDataRequest:'IPA/eUICC data request',
+  ipaEuiccDataResponse:'IPA/eUICC data response',profileDownloadTriggerRequest:'Profile download trigger',profileDownloadTriggerResult:'Profile download trigger result',
+  eimAcknowledgements:'eIM acknowledgements',eimPackageError:'error',eimPackageReceived:'package received',ePRAndNotifications:'eUICC Package result + notifications',
+  euiccPackageResultSigned:'signed result',euiccPackageErrorSigned:'signed error',euiccPackageErrorUnsigned:'unsigned error',
+  psmoList:'PSMOs',ecoList:'eCOs',pendingNotification:'notification',provideEimPackageResult:'ProvideEimPackageResult'};
+const TAGNAMES={'BF20':'euiccInfo1','BF22':'euiccInfo2','A0':'notificationsList','81':'defaultSmdpAddress','A2':'euiccPackageResultList','83':'rootSmdsAddress','84':'associationToken','A5':'eumCertificate','A6':'euiccCertificate','A8':'ipaCapabilities','A9':'deviceInfo','5A':'iccid','4F':'isdpAid','9F70':'profileState','90':'profileNickname','91':'serviceProviderName','92':'profileName','93':'iconType','94':'icon','95':'profileClass','B6':'notificationConfigurationInfo','B7':'profileOwner','B8':'dpProprietaryData','99':'profilePolicyRules','9F7B':'ecallIndication','9F26':'fallbackAttribute','9F67':'fallbackAllowed'};
+function findNode(n,name){ if(n.name===name) return n; for(const c of (n.children||[])){ const r=findNode(c,name); if(r) return r; } return null; }
+function tagListNames(node,bytes){ try{ const sub=parseBER(bytes,node.valStart,node.end,0); return sub.map(t=>TAGNAMES[t.tag]||t.tag); }catch(e){ const out=[]; let p=node.valStart; while(p<node.end){ let q=p+1; if((bytes[p]&0x1f)===0x1f){ while(q<node.end&&(bytes[q]&0x80))q++; q++; } const h=hx(bytes,p,q); out.push(TAGNAMES[h]||h); p=q; } return out; } }
+function summarize(root,bytes,typeName){
+  if(!typeName) return {title:'Unrecognised message',sub:'Tag '+root.tag+' is not a known SGP.32 message'};
+  const chain=[]; let cur=root;
+  // follow the chosen CHOICE alternatives down the spine
+  while(cur.children&&cur.children.length===1&&cur.children[0].isAlt){ cur=cur.children[0]; chain.push(cur.name); }
+  const detail=[];
+  const ops=findNode(root,'psmoList')||findNode(root,'ecoList');
+  if(ops&&ops.children){
+    for(const o of ops.children){ let d=o.name; const icc=findNode(o,'iccid'); if(icc&&icc.val) d+=` (ICCID ${icc.val})`; if(o.name==='listProfileInfo'){ const tl=findNode(o,'tagList'); if(tl) d+=` [${tagListNames(tl,bytes).join(', ')}]`; } if(o.name==='configureImmediateEnable'){ const a=findNode(o,'defaultSmdpAddress'); if(a&&a.val) d+=` (${a.val})`; } detail.push(d); }
+    chain.push((ops.name==='psmoList'?'PSMO':'eCO')+(ops.children.length===1?'':'s ×'+ops.children.length));
+  }
+  const res=findNode(root,'euiccResult');
+  if(res&&res.children) for(const r of res.children){ let d=r.name; const v=r.val||(r.children&&r.children[0]&&r.children[0].val); if(v) d+=` = ${v}`; detail.push(d); }
+  const tl=!ops&&findNode(root,'tagList'); if(tl) detail.push('requested: '+tagListNames(tl,bytes).join(', '));
+  const pdd=findNode(root,'profileDownloadData'); if(pdd&&pdd.children&&pdd.children[0]) detail.push(pdd.children[0].name+(pdd.children[0].val?' = '+pdd.children[0].val:''));
+  const err=root.isAlt?root:null; const leaf=cur; if(leaf!==root&&leaf.val&&!leaf.children) detail.push(leaf.val);
+  const eimId=findNode(root,'eimId'), eid=findNode(root,'eidValue'), ctr=findNode(root,'counterValue'), tx=findNode(root,'eimTransactionId');
+  const ctx=[]; if(eimId&&eimId.val) ctx.push('eIM '+eimId.val); if(eid&&eid.val) ctx.push('EID '+eid.val); if(ctr&&ctr.val) ctx.push('counter '+ctr.val); if(tx) ctx.push('transaction '+hx(bytes,tx.valStart,tx.end));
+  const title=[FRIENDLY[typeName]||typeName].concat(chain.map(c=>ALT_LABEL[c]||c)).join(' → ')+(detail.length?': '+detail.join(', '):'');
+  return {title,sub:ctx.join(' · ')};
+}
+
+
+/* ---------- PSMO / eCO operation panel ---------- */
+const PSMO_OPS=[['enable','A3'],['disable','A4'],['delete','A5'],['listProfileInfo','BF2D'],['getRAT','A6'],['configureImmediateEnable','A7'],['setFallbackAttribute','A8'],['unsetFallbackAttribute','A9'],['setDefaultDpAddress','BF65']];
+const ECO_OPS=[['addEim','A8'],['deleteEim','A9'],['updateEim','AA'],['listEim','AB']];
+const RESULT_TO_OP={enableResult:'enable',disableResult:'disable',deleteResult:'delete',listProfileInfoResult:'listProfileInfo',getRATResult:'getRAT',configureImmediateEnableResult:'configureImmediateEnable',setFallbackAttributeResult:'setFallbackAttribute',unsetFallbackAttributeResult:'unsetFallbackAttribute',setDefaultDpAddressResult:'setDefaultDpAddress',rollbackResult:'enable',addEimResult:'addEim',deleteEimResult:'deleteEim',updateEimResult:'updateEim',listEimResult:'listEim'};
+function opsPanel(root){
+  const list=findNode(root,'psmoList')||findNode(root,'ecoList');
+  const res=findNode(root,'euiccResult');
+  if(!list&&!res) return '';
+  const counts={}; let kind=null, source='';
+  if(list){ kind=list.name==='psmoList'?'PSMO':'eCO'; source='eUICC Package request'; for(const c of (list.children||[])) counts[c.name]=(counts[c.name]||0)+1; }
+  else { source='eUICC Package result'; for(const c of (res.children||[])){ const op=RESULT_TO_OP[c.name]; if(op){ counts[op]=(counts[op]||0)+1; kind=kind||(ECO_OPS.some(o=>o[0]===op)?'eCO':'PSMO'); } } }
+  const col=(title,full,ops,active)=>{
+    const n=ops.reduce((a,o)=>a+(counts[o[0]]||0),0);
+    return `<div class="opcol${active?' active':''}"><h3>${title} <span>${full}${active?' · '+n+' in this package':''}</span></h3><ul>`+
+      ops.map(o=>`<li class="${active&&counts[o[0]]?'hit':''}"><span>${o[0]}${active&&counts[o[0]]>1?' ×'+counts[o[0]]:''}</span><b>${o[1]}</b></li>`).join('')+`</ul></div>`;
+  };
+  return `<div class="ops" title="${source}">`+col('PSMO','Profile State Management Operations',PSMO_OPS,kind==='PSMO')+col('eCO','eIM Configuration Operations',ECO_OPS,kind==='eCO')+`</div>`;
+}
+
+let lastText='';
+function run(){
+  const outEl=document.getElementById('out');
+  const raw=document.getElementById('hex').value;
+  const opts={indent:document.getElementById('indent').checked,showhex:document.getElementById('showhex').checked};
+  let bytes;
+  try{ bytes=hexToBytes(raw); if(!bytes.length) throw new Error('No hex data.'); }
+  catch(e){ outEl.innerHTML=`<div class="msgs"><div class="msg err">${esc(e.message)}</div></div>`; return; }
+  let nodes;
+  try{ nodes=parseBER(bytes,0,bytes.length,0); }
+  catch(e){ outEl.innerHTML=`<div class="msgs"><div class="msg err">BER structure error: ${esc(e.message)}</div></div>`; return; }
+
+  const sel=document.getElementById('root').value;
+  const msgs=[]; const results=[];
+  for(const root of nodes){
+    let res;
+    if(sel==='auto'){ res=detect(root,bytes); if(!res){ res={node:root,issues:[],typeName:null}; generic(root,bytes); msgs.push({k:'warn',m:`Tag ${root.tag} is not a known SGP.32 message tag — showing generic BER.`}); } }
+    else { res=tryRoot(root,sel,bytes); if(!matches(tagsOf(sel),root.tag)) msgs.push({k:'warn',m:`${sel} expects tag ${tagsOf(sel).join('/')} but data starts with ${root.tag}.`}); }
+    results.push(res);
+  }
+  const out={text:[],html:[]};
+  results.forEach(r=>renderLines(r.node,bytes,opts,out));
+  lastText=out.text.join('\n');
+  const first=results[0];
+  const summ=summarize(first.node,bytes,first.typeName);
+  const title=summ.title;
+  const meta=`${bytes.length} bytes · ${nodes.length>1?nodes.length+' top-level TLVs · ':''}${sel==='auto'?'auto-detected':'selected'}${first.candidates&&first.candidates.length>1?' (also possible: '+first.candidates.filter(c=>c!==first.typeName).join(', ')+')':''}`;
+  lastText=title+(summ.sub?'\n'+summ.sub:'')+'\n\n'+lastText;
+  const issues=[].concat(...results.map(r=>r.issues));
+  let m=msgs.map(x=>`<div class="msg ${x.k}">${esc(x.m)}</div>`).join('');
+  if(issues.length) m+=`<div class="msg warn">${issues.length} schema issue${issues.length>1?'s':''}: ${esc(issues.slice(0,6).join('; '))}${issues.length>6?' …':''}</div>`;
+  let rawHtml='';
+  for(let i=0;i<bytes.length;i++) rawHtml+=`<b data-i="${i}">${bytes[i].toString(16).padStart(2,'0').toUpperCase()}</b>`;
+  outEl.innerHTML=`<div class="outhead"><div class="headline">${esc(title)}</div>${summ.sub?`<div class="ctx">${esc(summ.sub)}</div>`:''}<div class="meta">${esc(meta)}</div></div>${opsPanel(first.node)}${m?`<div class="msgs">${m}</div>`:''}<pre>${out.html.join('\n')}</pre><div class="raw" id="raw">${rawHtml}</div>`;
+
+  const rawB=[...outEl.querySelectorAll('#raw b')];
+  outEl.querySelectorAll('.ln').forEach(ln=>{
+    ln.addEventListener('mouseenter',()=>{ const a=+ln.dataset.a,b=+ln.dataset.b,v=+ln.dataset.v; for(let i=a;i<b;i++){ rawB[i].classList.add('hi'); if(i<v) rawB[i].classList.add('hit'); } });
+    ln.addEventListener('mouseleave',()=>{ const a=+ln.dataset.a,b=+ln.dataset.b; for(let i=a;i<b;i++) rawB[i].classList.remove('hi','hit'); });
+  });
+}
+
+/* ---------- UI wiring ---------- */
+(function init(){
+  const sel=document.getElementById('root');
+  for(const [group,names] of ROOTS){ const og=document.createElement('optgroup'); og.label=group; for(const n of names){ const o=document.createElement('option'); o.value=n; o.textContent=`${n} (${tagsOf(n)[0]})`; og.appendChild(o);} sel.appendChild(og); }
+  const SAMPLES=[
+    ['eUICC Package (configureImmediateEnable)','BF4F8199BF5181953050801165696D2D6465762E776F726B7A2E636F6D5A1089001054010311110704011985000535810205398204089C7DACA01FA71D800081042A0402018213636F6E73756D65722E7273702E676C6F62616C5F3740B7FCAC43D96C5F0F8D858C83633E91DEFAC2F0BF5AC234CAC5EA9FB51B4F019AAF83DBE80698BE27713CF1F7D0B65B9F7F451DF82DF21F91A81ABC17A638AFF8'],
+    ['eUICC Package (listProfileInfo)','BF4F7FBF517C3037801165696D2D6465762E776F726B7A2E636F6D5A108900105401011013672105207000489281010682059988776655A006BF2D035C015A5F37407D53ECD02AD989A1D9792ECD0438372A3AA9320A7F58234BDBF98450F273F41751854E08C835F0CB42FA5962A7CFE705683D0569A514E7B2AA17911AE4EF36F4'],
+    ['GetEimPackageRequest','BF4F175A10890010540103111107040119850005358000810105'],
+    ['eUICC Package (enable + rollback)','BF5135302C800365696D5A1089001054010311110704011985000535810101A010A30E5A0A981032547698103254F605005F3704DEADBEEF'],
+    ['ProvideEimPackageResultResponse (acks)','BF5009BF5306800101800102'],
+    ['IpaEuiccDataRequest','BF4F0EBF520B5C04BF20BF22A203800105']
+  ];
+  const sw=document.getElementById('samples');
+  for(const [label,hex] of SAMPLES){ const b=document.createElement('button'); b.className='ghost'; b.textContent=label; b.addEventListener('click',()=>{document.getElementById('hex').value=hex;run();}); sw.appendChild(b); }
+  document.getElementById('go').addEventListener('click',run);
+  document.getElementById('hex').addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter') run(); });
+  ['root','indent','showhex'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{ if(document.getElementById('hex').value.trim()) run(); }));
+  document.getElementById('copy').addEventListener('click',async()=>{ if(!lastText) return; try{ await navigator.clipboard.writeText(lastText); const b=document.getElementById('copy'); b.textContent='Copied'; setTimeout(()=>b.textContent='Copy output',1200);}catch(e){} });
+})();
+</script>
+</body>
+</html>
